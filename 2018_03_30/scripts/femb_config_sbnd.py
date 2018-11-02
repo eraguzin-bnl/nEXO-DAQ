@@ -11,6 +11,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy import stats
 import os
+from scripts.Data_Analysis import Data_Analysis
 settings = user_editable_settings()
 
 class FEMB_CONFIG:
@@ -65,15 +66,6 @@ class FEMB_CONFIG:
         self.femb.write_reg ( 22, settings.read_asic_3_2, "femb")
         self.femb.write_reg ( 23, settings.read_asic_neg - 0x80000000, "femb")
         self.femb.write_reg ( 23, settings.read_asic_neg, "femb")
-        
-        self.femb.write_reg ( 24, settings.write_asic_1_0, "femb")
-        self.femb.write_reg ( 25, settings.write_asic_3_2, "femb")
-        self.femb.write_reg ( 26, settings.write_asic_neg - 0x80000000, "femb")
-        self.femb.write_reg ( 26, settings.write_asic_neg, "femb")
-        
-#        self.reg24                = self.femb.read_reg( 24, board = "femb" )
-#        self.reg25                = self.femb.read_reg( 25, board = "femb" )
-#        self.reg26                = self.femb.read_reg( 26, board = "femb" )
 
         #Gives default pulse values
         reg_5_value = ((self.REG_TEST_PULSE_FREQ<<16)&0xFFFF0000) + ((self.REG_TEST_PULSE_DLY<<8)&0xFF00) +\
@@ -111,7 +103,7 @@ class FEMB_CONFIG:
                                                     f2 = 0, f3 = 0, f4 = 1, f5 = 0, slsb = 0, show="FALSE")  
 
         #set default value to FEMB ADCs and FEs
-        self.configAdcAsic()
+        self.configAdcAsic(output = "first")
         self.configFeAsic()
         
         print ("FEMB_CONFIG--> Initialize FEMB is DONE")
@@ -158,8 +150,16 @@ class FEMB_CONFIG:
             else: 
                 if (output != "suppress"):
                     print ("FEMB_CONFIG--> ADC ASIC SPI is OK")
-                self.adc_reg.info.adc_regs_sent = adcasic_rb_regs
-                break
+                if (output != "first"):
+                    if (self.sbnd.femb_config.testUnsync(adcNum) == 0):
+                        print ("FEMB_CONFIG--> ADC synced after SPI write!")
+                        self.adc_reg.info.adc_regs_sent = adcasic_rb_regs
+                        break
+                    else:
+                        print ("FEMB_CONFIG--> ADC not synced after SPI write!")
+                else:
+                    self.adc_reg.info.adc_regs_sent = adcasic_rb_regs
+            break
                 
 
 
@@ -241,7 +241,6 @@ class FEMB_CONFIG:
 #        screendisplay = sys.stdout
 #        sys.stdout = open(file_rec, "w")
         
-        self.femb.write_reg( 3, newReg3, board = "femb") #31 - enable ADC test pattern
         for a in chips:
             print ("FEMB_CONFIG--> Test ADC " + str(a))
             unsync = self.testUnsync(a)
@@ -255,6 +254,8 @@ class FEMB_CONFIG:
         self.reg21                = self.femb.read_reg( 21, board = "femb" )
         self.reg22                = self.femb.read_reg( 22, board = "femb" )
         self.reg23                = self.femb.read_reg( 23, board = "femb" )
+        
+        self.femb.write_reg( 3, newReg3, board = "femb") #31 - enable ADC test pattern
         print ("FEMB_CONFIG--> Final Check!")
         for a in chips:
             print ("FEMB_CONFIG--> Test ADC " + str(a))
@@ -264,6 +265,7 @@ class FEMB_CONFIG:
                 self.fixUnsync(a)
             elif (unsync == 0):
                 print ("FEMB_CONFIG--> ADC {} synced!".format(a))
+                
 #        sys.stdout.close()
 #        sys.stdout = screendisplay
         print ("FEMB_CONFIG--> Latch latency " + str(hex(self.REG_LATCHLOC1_4_data)))
@@ -274,9 +276,9 @@ class FEMB_CONFIG:
         self.femb.write_reg( 3, (reg3&0x7fffffff), board = "femb" )
         print ("FEMB_CONFIG--> End sync ADC")
 
-    def testUnsync_old(self, chip, output = "ok"):
+    def testUnsync_old(self, chip, output = "ok"):        
         adcNum = int(chip)
-        if (adcNum < 0 ) or (adcNum > 7 ):
+        if (adcNum < 0 ) or (adcNum > 3 ):
                 print ("FEMB_CONFIG--> femb_config_femb : testLink - invalid asic number")
                 return
 
@@ -322,9 +324,22 @@ class FEMB_CONFIG:
                 break
         return badSync
     
+    def manualCheck(self,chip):
+        data = self.femb.get_data_packets(ip = settings.CHIP_IP[int(chip)], 
+            data_type = "int", num = 5, header = False)
+        print ("Chip {}".format(chip))
+        self.analyze.UnpackData(path = "data", data = data)
+        plt.show()
+        
+        answer = input("Is this ok?")
+        if (answer == "y"):
+            return 0
+        else:
+            return 1
+    
     def testUnsync(self, chip):
         adcNum = int(chip)
-        if (adcNum < 0 ) or (adcNum > 7 ):
+        if (adcNum < 0 ) or (adcNum > 3 ):
             print ("FEMB_CONFIG--> femb_config_femb : testLink - invalid asic number")
             return
         
@@ -364,14 +379,20 @@ class FEMB_CONFIG:
             latch_down = 0
             latch_up = 1
         else:
-            minimum1 = [2,2,2,2]
-            maximum1 = [28,28,28,28]
+            minimum1 = [-32,-32,-32,-32]
+            maximum1 = [32,32,32,32]
             steps1   = [4,4,4,4]
-            latch_down = 1
-            latch_up = 2
+            minimum2 = [0,0,0,0]
+            maximum2 = [32,32,32,32]
+            steps2   = [36,36,36,36]
+            minimum_latch = [0x05,0x05,0x05,0x05]
+            maximum_latch = [0x08,0x08,0x08,0x08]
+            steps_latch   = [1,1,1,1]
+#            latch_down = 1
+#            latch_up = 2
         
         adcNum = int(adc)
-        if (adcNum < 0 ) or (adcNum > 7 ):
+        if (adcNum < 0 ) or (adcNum > 3 ):
                 print ("FEMB_CONFIG--> femb_config_femb : testLink - invalid asic number")
                 return
 #First it finds the initial settings to reference those
@@ -379,14 +400,19 @@ class FEMB_CONFIG:
 
         if (adcNum == 0):
             initPLL_read = self.femb.read_reg( 21, board = "femb" )
+            initPLL_write = self.femb.read_reg( 24, board = "femb" )
         elif (adcNum == 1):
             initPLL_read = self.femb.read_reg( 21, board = "femb" )
+            initPLL_write = self.femb.read_reg( 24, board = "femb" )
         elif (adcNum == 2):
             initPLL_read = self.femb.read_reg( 22, board = "femb" )
+            initPLL_write = self.femb.read_reg( 25, board = "femb" )
         elif (adcNum == 3):
             initPLL_read = self.femb.read_reg( 22, board = "femb" )
+            initPLL_write = self.femb.read_reg( 25, board = "femb" )
             
         initPLL_read2 = self.femb.read_reg( 23, board = "femb" )
+        initPLL_write2 = self.femb.read_reg( 26, board = "femb" )
         
 #Since this register has the settings for all 4 chips, it isolates the value for the chip you want to test
         initSetting = (initLATCH1_4 & (0xFF << (8 * adcNum))) >> (8 * adcNum)
@@ -395,8 +421,10 @@ class FEMB_CONFIG:
         print ("FEMB_CONFIG--> Initial Latch is {}".format(hex(initLATCH1_4)))
         print ("FEMB_CONFIG--> First testing around the initial setting of {}".format(hex(initSetting)))
         print ("FEMB_CONFIG--> initPLL_read2 is {}".format(hex(initPLL_read2)))
-        
-        for shift in range(initSetting - latch_down,initSetting + latch_up,1):
+        print ("FEMB_CONFIG--> Initial Write PLL is {}".format(hex(initPLL_write)))
+        print ("FEMB_CONFIG--> initPLL_write2 is {}".format(hex(initPLL_write2)))
+		
+        for shift in range(minimum_latch[adcNum], maximum_latch[adcNum] + 1, steps_latch[adcNum]):
             
 #Does bitwise math so that when you increment coarse read clock, you change the right part of that shared register
             shiftMask = (0x3F << 8*adcNum)
@@ -444,11 +472,6 @@ class FEMB_CONFIG:
                 
                 self.femb.write_reg ( 23, pll2, "femb")
                 self.femb.write_reg ( 23, 0x80000000 + pll2, "femb")
-
-#Ok, we've finally written everything for the test.  Now I keep track of it to print each one as a sanity check
-                reg21 = self.femb.read_reg( 21, board = "femb" )
-                reg22 = self.femb.read_reg( 22, board = "femb" )
-                reg23 = self.femb.read_reg( 23, board = "femb" )
                 
 #This part is because of weird things the long cable was doing (changing the above settings would sometimes
 #cause SPI write failures.)
@@ -459,26 +482,90 @@ class FEMB_CONFIG:
 #                    self.configAdcAsic()
 #                    sys.stdout = screendisplay
 #                    time.sleep(0.05)
-                
-                print ("FEMB_CONFIG--> Trying to sync Chip {} with {}".format(adcNum, 
-                       hex(testShift)))
-                print ("FEMB_CONFIG--> Register 21: {}, Register 22: {}, Register 23: {}".format(hex(reg21), hex(reg22), hex(reg23)))
-                #test link
-                unsync = self.testUnsync(adcNum)
-#If everything worked, we're done.  Save the value that worked and get out.  If not, keep going through the loop
-                if unsync == 0 :
-                    print ("FEMB_CONFIG--> ADC {} synchronized".format(adc))
-                    self.REG_LATCHLOC1_4_data = testShift
-                    self.reg23 = self.femb.read_reg( 23, board = "femb" )
+                for PLL_write in range(minimum2[adcNum], maximum2[adcNum], steps2[adcNum]):
+                    absolute = abs(PLL_write)
                     if (adcNum == 0):
-                        self.reg21 = self.femb.read_reg( 21, board = "femb" )
+                        self.femb.write_reg( 24, (initPLL_write & 0xFFFF0000) + absolute, board = "femb" )
+                        if (PLL_write > 0):
+                            pll2 = initPLL_write2 & 0x000E0000
+                        else:
+                            pll2 = (initPLL_write2 | 0x00010000) & 0x7FFFFFF
+    #                    print ("Init PLL is {}, adjusted PLL is {} and adding {} to it gives {}".format(hex(initPLL),
+    #                       hex(initPLL & 0xFFFF0000), hex(PLL), hex((initPLL & 0xFFFF0000) + PLL)))
                     elif (adcNum == 1):
-                        self.reg21 = ((self.femb.read_reg( 21, board = "femb" )) >> 16)
+                        self.femb.write_reg( 24, (initPLL_write & 0xFFFF) + (absolute << 16), board = "femb" )
+                        if (PLL_write > 0):
+                            pll2 = initPLL_write2 & 0x000D0000
+                        else:
+                            pll2 = (initPLL_write2 | 0x00020000) & 0x7FFFFFF
+    #                    print ("Init PLL is {}, adjusted PLL is {} and adding {} to it gives {}".format(hex(initPLL),
+    #                       hex(initPLL & 0xFFFF), hex(PLL << 16), hex((initPLL & 0xFFFF) + (PLL << 16))))
                     elif (adcNum == 2):
-                        self.reg22 = self.femb.read_reg( 22, board = "femb" )
+                        self.femb.write_reg( 25, (initPLL_write & 0xFFFF0000) + absolute, board = "femb" )
+                        if (PLL_write > 0):
+                            pll2 = initPLL_write2 & 0x000B0000
+                        else:
+                            pll2 = (initPLL_write2 | 0x00040000) & 0x7FFFFFF
+    #                    print ("Init PLL is {}, adjusted PLL is {} and adding {} to it gives {}".format(hex(initPLL),
+    #                       hex(initPLL & 0xFFFF0000), hex(PLL), hex((initPLL & 0xFFFF0000) + PLL)))
                     elif (adcNum == 3):
-                        self.reg22 = ((self.femb.read_reg( 22, board = "femb" )) >> 16)
-                    return
+                        self.femb.write_reg( 25, (initPLL_write & 0xFFFF) + (absolute << 16), board = "femb" )
+                        if (PLL_write > 0):
+                            pll2 = initPLL_write2 & 0x00070000
+                        else:
+                            pll2 = (initPLL_write2 | 0x00080000) & 0x7FFFFFF
+    #                    print ("Init PLL is {}, adjusted PLL is {} and adding {} to it gives {}".format(hex(initPLL),
+    #                       hex(initPLL & 0xFFFF), hex(PLL << 16), hex((initPLL & 0xFFFF) + (PLL << 16))))
+    
+                    
+                    self.femb.write_reg ( 26, pll2, "femb")
+                    self.femb.write_reg ( 26, 0x80000000 + pll2, "femb")
+    
+    #Ok, we've finally written everything for the test.  Now I keep track of it to print each one as a sanity check
+                    reg21 = self.femb.read_reg( 21, board = "femb" )
+                    reg22 = self.femb.read_reg( 22, board = "femb" )
+                    reg23 = self.femb.read_reg( 23, board = "femb" )
+                    reg24 = self.femb.read_reg( 24, board = "femb" )
+                    reg25 = self.femb.read_reg( 25, board = "femb" )
+                    reg26 = self.femb.read_reg( 26, board = "femb" )
+                    
+                    print ("FEMB_CONFIG--> Latch latency " + str(hex(shift)))
+                    print ("FEMB_CONFIG--> Read Control 1 (Reg 21) " + str(hex(reg21)))
+                    print ("FEMB_CONFIG--> Read Control 2 (Reg 22) " + str(hex(reg22)))
+                    print ("FEMB_CONFIG--> Read Control 3 (Reg 23) " + str(hex(reg23)))
+                    print ("FEMB_CONFIG--> Write Control 1 (Reg 24) " + str(hex(reg24)))
+                    print ("FEMB_CONFIG--> Write Control 2 (Reg 25) " + str(hex(reg25)))
+                    print ("FEMB_CONFIG--> Write Control 3 (Reg 26) " + str(hex(reg26)))
+#                    self.testUnsync(chip=adc)
+                    
+                    
+#                    data = self.femb.get_data_packets(ip = settings.CHIP_IP[int(adc)], 
+#                    data_type = "int", num = 5, header = False)
+#                    print ("Chip {}".format(adc))
+#                    self.analyze.UnpackData(path = "data", data = data)
+#                    plt.show()
+                    
+                    unsync1 = self.testUnsync(adc)
+                    unsync2 = self.testUnsync_old(adc)
+                    unsync = unsync1 or unsync2
+                    if unsync == 0 :
+                        print ("FEMB_CONFIG--> ADC {} synchronized".format(adc))
+                        self.REG_LATCHLOC1_4_data = testShift
+                        self.reg23 = self.femb.read_reg( 23, board = "femb" )
+                        self.reg26 = self.femb.read_reg( 26, board = "femb" )
+                        if (adcNum == 0):
+                            self.reg21 = self.femb.read_reg( 21, board = "femb" )
+                            self.reg24 = self.femb.read_reg( 24, board = "femb" )
+                        elif (adcNum == 1):
+                            self.reg21 = ((self.femb.read_reg( 21, board = "femb" )) >> 16)
+                            self.reg24 = ((self.femb.read_reg( 24, board = "femb" )) >> 16)
+                        elif (adcNum == 2):
+                            self.reg22 = self.femb.read_reg( 22, board = "femb" )
+                            self.reg25 = self.femb.read_reg( 25, board = "femb" )
+                        elif (adcNum == 3):
+                            self.reg22 = ((self.femb.read_reg( 22, board = "femb" )) >> 16)
+                            self.reg25 = ((self.femb.read_reg( 25, board = "femb" )) >> 16)
+                        return
 
         #if program reaches here, sync has failed
         print ("FEMB_CONFIG--> ADC SYNC process failed for ADC # " + str(adc))
@@ -488,14 +575,19 @@ class FEMB_CONFIG:
         
         if (adcNum == 0):
             self.femb.write_reg( 21, initPLL_read, board = "femb" )
+            self.femb.write_reg( 24, initPLL_write, board = "femb" )
         elif (adcNum == 1):
             self.femb.write_reg( 21, initPLL_read, board = "femb" )
+            self.femb.write_reg( 24, initPLL_write, board = "femb" )
         elif (adcNum == 2):
             self.femb.write_reg( 22, initPLL_read, board = "femb" )
+            self.femb.write_reg( 25, initPLL_write, board = "femb" )
         elif (adcNum == 3):
             self.femb.write_reg( 22, initPLL_read, board = "femb" )
+            self.femb.write_reg( 25, initPLL_write, board = "femb" )
             
         self.femb.write_reg( 23, initPLL_read2, board = "femb" )
+        self.femb.write_reg( 26, initPLL_write2, board = "femb" )
         
     def optimize_offset(self, path, gain):
         #assume there's no pulses, just a regular baseline.  This finds out how to shift the ADC to find a baseline
@@ -826,7 +918,7 @@ class FEMB_CONFIG:
         self.fe_reg = FE_ASIC_REG_MAPPING() 
         
         self.WIB_RESET = 1
-        
+        self.analyze = Data_Analysis()
         self.BPS = 13 #Bytes per sample
         
         self.analyze = Data_Analysis()

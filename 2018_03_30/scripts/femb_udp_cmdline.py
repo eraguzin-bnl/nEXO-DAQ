@@ -39,7 +39,10 @@ class FEMB_UDP:
         
         #Set up socket for IPv4 and UDP, attach the correct PC IP
         sock_write = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock_write.bind((settings.CHIP_IP[0], 0))
+        try:
+            sock_write.bind((settings.CHIP_IP[0], 0))
+        except:
+            print("IP: {}".format(settings.CHIP_IP[0]))
         
         #Send to FPGA at 192.168.121.1, and the correct port for the board we're writing to
         if (board == "femb"):
@@ -224,10 +227,13 @@ class FEMB_UDP:
         sock_write.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         
         #Send from the appropriate socket to the requested IP (maybe add something to tell you if you did it wrong?)
-        sock_write.bind((hostIP,dummy_port))
-        sock_write.sendto(WRITE_MESSAGE,(destIP, self.FEMB_PORT_WREG ))
-
-        sock_write.close()
+        try:
+            sock_write.bind((hostIP,dummy_port))
+            sock_write.sendto(WRITE_MESSAGE,(destIP, self.FEMB_PORT_WREG ))
+    
+            sock_write.close()
+        except:
+            print("Host IP: {}\nDummy Port: {}\nDest IP:{}\nWREG: {}".format(hostIP, dummy_port, destIP, self.FEMB_PORT_WREG))
         
     #This function will start the C dll that simulataneously reads 4 sockets for a given time or number of packets. Takes:
     #The amount of total packets to read (0 means go until Python externally tells it to stop)

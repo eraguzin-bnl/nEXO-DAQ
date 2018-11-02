@@ -1,13 +1,14 @@
-from scripts.raw_process2 import rms_process,ENC_plots,gain_process
-from scripts.gain_to_excels import get_gain_results
 import os
+from scripts.raw_process2 import rms_process,ENC_plots,gain_process, baseline_process
+from scripts.gain_to_excels import get_gain_results
+from scripts.Energy_Analysis import Energy
+
 import openpyxl as px
 from openpyxl import Workbook
 import glob
 import pickle
 import gc
- 
-
+import matplotlib as plt
 
 class calibration_analysis:
     def loop(self):
@@ -26,16 +27,17 @@ class calibration_analysis:
         
         with open(self.cal_dir_name + '\\configuration.cfg', 'rb') as f:
             self.config = pickle.load(f)
-        temp_code = (self.config["temp"])
+#            self.config = 0
+#        temp_code = (self.config["temp"])
         
-        if (temp_code == "RT"):
-            print ("Test was done at Room Temperature\n")
-        elif (temp_code == "LN"):
-            print ("Test was done at Liquid Nitrogen Temperature\n")
-        elif (temp_code == "LXe"):
-            print ("Test was done at Liquid Xenon Temperature\n")
-        else:
-            print ("No calibration data found.  Check or run calibration\n")
+#        if (temp_code == "RT"):
+#            print ("Test was done at Room Temperature\n")
+#        elif (temp_code == "LN"):
+#            print ("Test was done at Liquid Nitrogen Temperature\n")
+#        elif (temp_code == "LXe"):
+#            print ("Test was done at Liquid Xenon Temperature\n")
+#        else:
+#            print ("No calibration data found.  Check or run calibration\n")
         
         #Find out what analyses have already been done to suggest the next.
         
@@ -46,7 +48,7 @@ class calibration_analysis:
             self.ENC = self.config["ENC"]
         except:
             pass
-        print (self.config)
+#        print (self.config)
         
         self.help_info()
         
@@ -66,12 +68,15 @@ class calibration_analysis:
             else:
                 print ("It looks like no analyses have been run.  Run the PULSE analysis\n")
 
-            function = input( "Enter 'end, 'help', 'PULSE', 'GAIN', 'RMS', 'ENC', or 'ALL'\n")
+            function = input( "Enter 'end, 'help', 'BASE', 'PULSE', 'GAIN', 'RMS', 'ENC', or 'ALL'\n")
             if (function == "end"):
                 break
                 
             elif (function == "help"):
                 self.help_info()
+                
+            elif (function == "BASE"):
+                self.Baseline_analysis()
                 
             elif (function == "PULSE"):
                 self.PULSE_analysis()
@@ -84,41 +89,65 @@ class calibration_analysis:
                 
             elif (function == "ENC"):
                 self.ENC_analysis()
+				
+            elif (function == "Energy"):
+                self.Energy_analysis()
                 
             elif (function == "ALL"):
+                self.Baseline_analysis()
                 self.PULSE_analysis()
                 self.GAIN_analysis()
                 self.RMS_analysis()
-                self.ENC_analysis()
+#                self.ENC_analysis()
                 
             else:
                 print ("That's not a function")
+                
+    def Baseline_analysis(self):
+        print ("Beginning Baseline Analysis")
+        RMS_wb = Workbook()
+        for onedir in self.dirs:
+            search_path = self.root + "\\" + onedir + "\\"
+            for root_pulse, dirs_pulse, files_pulse in os.walk(search_path):
+                break
+            
+            if (('pedestal.dat' in files_pulse) == True):
+                gc.collect()
+
+                RMS_filename = self.root + self.INT_RMS_excel_name
+                baseline_process(search_path, RMS_wb)
+                RMS_wb.save(filename = RMS_filename)
+                
+        if (len(RMS_wb.sheetnames) > 1):
+            RMS_wb.remove(RMS_wb["Sheet"])
+            RMS_wb.save(filename = RMS_filename)
+
+        self.config['BASE'] = 1
+        self.BASE = 1
+            
+        with open(self.cal_dir_name + 'configuration.cfg', 'wb') as f:
+                pickle.dump(self.config, f, pickle.HIGHEST_PROTOCOL)
+                
+        print ("Completed Baseline Analysis")
     
     def PULSE_analysis(self):
-        wb_fpga = Workbook()
+        print ("Beginning Pulse Analysis")
         wb_int = Workbook()
+#        RMS_filename = self.root + self.INT_RMS_excel_name
+#        wb_base = px.load_workbook(RMS_filename)
         
         for onedir in self.dirs:
             search_path = self.root + "\\" + onedir + "\\"
             for root_pulse, dirs_pulse, files_pulse in os.walk(search_path):
                 break
             
-            if (('cali_fpgadac' in dirs_pulse) == True):
-                gain_process(search_path, 0, wb_fpga) 
-                fpga_filename = self.root + self.FPGA_pulse_excel_name
-                wb_fpga.save(filename = fpga_filename)
-            
             if (('cali_intdac' in dirs_pulse) == True):
-                gain_process(search_path, 1, wb_int) 
+                gain_process(search_path, wb_int, wb_base=None) 
                 int_filename = self.root + self.INT_pulse_excel_name
                 wb_int.save(filename = int_filename)
-                
-        if (len(wb_fpga.get_sheet_names()) > 1):
-            wb_fpga.remove_sheet(wb_fpga["Sheet"])
-            wb_fpga.save(filename = fpga_filename)
-            
-        if (len(wb_int.get_sheet_names()) > 1):
-            wb_int.remove_sheet(wb_int["Sheet"])
+
+        if (len(wb_int.sheetnames) > 1):
+            wb_int.remove(wb_int["Sheet"])
             wb_int.save(filename = int_filename)
             
         self.config['PULSE'] = 1
@@ -126,24 +155,20 @@ class calibration_analysis:
             
         with open(self.cal_dir_name + 'configuration.cfg', 'wb') as f:
                 pickle.dump(self.config, f, pickle.HIGHEST_PROTOCOL)
+                
+        print ("Completed Pulse Analysis")
     
     def GAIN_analysis(self):
         for onedir in self.dirs:
             search_path = self.root + "\\" + onedir + "\\"
             for root_pulse, dirs_pulse, files_pulse in os.walk(search_path):
                 break
-
-            if (('cali_fpgadac' in dirs_pulse) == True):
-                pulse_filename = self.root + self.FPGA_pulse_excel_name
-                RMS_filename = self.root + self.FPGA_RMS_excel_name
-                get_gain_results(search_path, pulse_filename, RMS_filename,
-                                 0, self.config["temp"])
             
             if (('cali_intdac' in dirs_pulse) == True):
                 pulse_filename = self.root + self.INT_pulse_excel_name
                 RMS_filename = self.root + self.INT_RMS_excel_name
                 get_gain_results(search_path, pulse_filename, RMS_filename,
-                                 1, self.config["temp"])
+                                 self.config["temp"])
 
         self.config['GAIN'] = 1
         self.GAIN = 1
@@ -159,13 +184,6 @@ class calibration_analysis:
             
             if (('pedestal.dat' in files_pulse) == True):
                 gc.collect()
-                RMS_filename = self.root + self.FPGA_RMS_excel_name
-                
-                if (os.path.isfile(RMS_filename)):
-                    print ("External FPGA DAC Pulse")
-                    wb = px.load_workbook(RMS_filename) 
-                    rms_process(search_path, wb)
-                    wb.save(filename = RMS_filename)
                     
                 RMS_filename = self.root + self.INT_RMS_excel_name
                 
@@ -203,7 +221,24 @@ class calibration_analysis:
             
         with open(self.cal_dir_name + 'configuration.cfg', 'wb') as f:
                 pickle.dump(self.config, f, pickle.HIGHEST_PROTOCOL)
-
+				
+    def Energy_analysis(self):
+        calibration_directory = "D:\\nEXO\\2018_04_18\\Calibration"
+        data_directory = "D:\\nEXO\\2018_04_04\\Triggered\\Seperated_Packets\\"
+        output_directory = "D:\\nEXO\\2018_04_18"
+        samples = 1000
+        Energy_data = Energy(cal_directory = calibration_directory, data_directory = data_directory, samples = samples)
+		
+        for bins in [100,500,1000]:
+            fig = plt.figure(figsize=(12,8))
+            ax = fig.add_subplot(111)  
+            ax.hist(Energy_data,bins=bins)
+            ax.set_xlabel("Energy (eV)")
+            ax.set_ylabel("Counts")
+            ax.set_title("Energy Spectrum")
+            fig.savefig ("{}_{}.jpg".format(output_directory, bins))
+            fig.clf()
+            plt.close()
         
     def help_info(self):
         print ("The analyses in this file are meant to be run after data has been collected from the BNL ASICs.  "
@@ -233,8 +268,9 @@ class calibration_analysis:
         print ("Type 'end' to exit.")
         
     def __init__(self):
-        self.cur_path = "D:\\nEXO\\2018_03_29\\"
-        self.calibration_folder = "*Calibration_please2*"
+#        self.cur_path = "Z:\\nEXO - Charge Readout\\Stanford Setup\\Stanford Trip April 2018\\"
+        self.cur_path = "D:\\nEXO\\2018_10_19\\"
+        self.calibration_folder = "*Calibration_test*"
         self.chip_num = 4
         self.PULSE = None
         self.GAIN = None
@@ -254,5 +290,6 @@ class calibration_analysis:
             
         
 if __name__ == "__main__":
+    print ("Start")
     calibration_analysis().loop()
 

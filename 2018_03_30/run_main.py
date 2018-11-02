@@ -3,6 +3,7 @@ import os
 import sys
 #import copy
 from datetime import datetime
+import matplotlib.pyplot as plt
 import pickle
 import logging
 import time
@@ -37,7 +38,7 @@ class main:
         time.sleep(0.1)
         response = self.sbnd.femb_config.femb.read_reg(8, board = "femb")
         if (response != 7):
-            print ("There is no communication with the FPGA.  Try resetting the power, making sure all connections "
+            print ("There is no communication with the FEMB FPGA.  Try resetting the power, making sure all connections "
                    "are correct, and restarting the program.")
             print (response)
             
@@ -46,7 +47,7 @@ class main:
             self.sbnd.femb_config.resetWIBBoard()
             self.sbnd.femb_config.initBoard()
             self.sbnd.femb_config.syncADC([0,1,2,3])
-            print ("Communication is working with the FPGA.")
+            print ("Communication is working with the FPGAs.")
 
             
         self.sbnd.femb_config.fe_reg.info.fe_regs_sw = self.sbnd.femb_config.fe_reg.REGS
@@ -64,9 +65,8 @@ class main:
         except OSError:
             if os.path.exists(settings.path):
                 pass
-#        self.plot_pulsed_data_no_change()
         while(1):
-            #self.help_info()
+            self.help_info()
             raw_in = input("Enter your input\n")
             if (raw_in == "end"):
                 break
@@ -74,6 +74,7 @@ class main:
                 for i in range(settings.chip_num):
                     print ("Live packet of Chip {}...".format(i))
                     self.plot_live_packet(chip = i)
+                plt.show()
                 
             elif (raw_in == "pulsed"):
                 print ("Pulsed packet...")
@@ -93,7 +94,7 @@ class main:
                 
             elif (raw_in == "temp"):
                 print ("Polling for the temperature")
-                self.sbnd.femb_config.syncADC([0,1,2,3])
+#                self.sbnd.femb_config.syncADC([0,1,2,3])
                 self.check_temp([0,1,2,3])
 
             elif (raw_in == "bathtub"):
@@ -143,6 +144,9 @@ class main:
             elif (raw_in == "help"):
                 self.help_info()
                 
+            elif (raw_in == "check"):
+                self.quick_check(board = "femb")
+                
             else:
                 print ("That's not a function")
 
@@ -164,7 +168,7 @@ class main:
                     
                     self.sbnd.femb_config.configFeAsic(output = "suppress")
                     print ("Optimizing ADC offset values")
-                    self.sbnd.femb_config.optimize_offset(self.sbnd.path,sg[0])
+#                    self.sbnd.femb_config.optimize_offset(self.sbnd.path,sg[0])
     
                     self.sbnd.save_rms_noise()
                     
@@ -241,34 +245,6 @@ class main:
         data = self.sbnd.femb_config.femb.get_data_packets(ip = settings.CHIP_IP[chip], 
                                                            data_type = "int", num = packets, header = False)
         self.sbnd.analyze.UnpackData(path = "data", data = data)
-        
-    def plot_pulsed_data_no_change(self):
-        for chip in range(settings.chip_num):
-            reg_5_original = self.sbnd.femb_config.femb.read_reg(self.sbnd.femb_config.REG_TEST_PULSE, "femb")
-            reg_5_value = ((150<<16)&0xFFFF0000) + ((reg_5_original)& 0xFFFF)   
-            self.sbnd.femb_config.femb.write_reg(self.sbnd.femb_config.REG_TEST_PULSE, reg_5_value, "femb")
-            
-            #Enable test pulses
-            self.sbnd.femb_config.femb.write_reg(18, 0x0, board = "femb")
-            
-            #Enable internal test pulse
-            self.sbnd.femb_config.femb.write_reg(16, 0x002, board = "femb")
-            
-            time.sleep(0.01)
-    
-            data = self.sbnd.femb_config.femb.get_data_packets(ip = settings.CHIP_IP[chip], 
-                                                               data_type = "int", num = 25, header = False)
-            print ("Chip {}".format(chip))
-            self.sbnd.analyze.UnpackData(path = "data", data = data)
-                
-            #Bring everything back the way it was            
-            self.sbnd.femb_config.femb.write_reg(self.sbnd.femb_config.REG_TEST_PULSE, reg_5_original, "femb")
-            
-            #Disable all test pulses
-            self.sbnd.femb_config.femb.write_reg(18, 0x1, board = "femb")
-            
-            #Disable FPGA test pulse
-            self.sbnd.femb_config.femb.write_reg(16, 0x1, board = "femb")
 
     def bathtub(self, adc, filename):
         wb = Workbook()
@@ -288,9 +264,9 @@ class main:
                                                 clk = 0, frqc = 0, en_gr = 1, f0 = 0, f1 = 0, 
                                                 f2 = 0, f3 = 0, f4 = 1, f5 = 0, slsb = 0, show="FALSE")        
         
-        reg3 = self.sbnd.femb_config.femb.read_reg(3, board = "femb")
-        newReg3 = ( reg3 | 0x80000000 )
-        self.sbnd.femb_config.femb.write_reg( 3, newReg3, board = "femb") #31 - enable ADC test pattern
+#        reg3 = self.sbnd.femb_config.femb.read_reg(3, board = "femb")
+#        newReg3 = ( reg3 | 0x80000000 )
+#        self.sbnd.femb_config.femb.write_reg( 3, newReg3, board = "femb") #31 - enable ADC test pattern
         
         time.sleep(0.01)
 
@@ -454,7 +430,7 @@ class main:
                             self.sbnd.femb_config.femb.write_reg ( self.sbnd.femb_config.REG_ASIC_RESET, 1, "femb")
                             self.sbnd.femb_config.configAdcAsic(output = "suppress")
                             time.sleep(0.05)
-                            if (self.sbnd.femb_config.testUnsync(adcNum, output = "suppress") == 0):
+                            if (self.sbnd.femb_config.testUnsync(adcNum) == 0):
                                 works = works + 1
     
                         print ("Bathtub Curve Test --> Result is {}".format(works))
@@ -476,7 +452,7 @@ class main:
                         wb.save(filename = filename)
 
         #Bring everything back the way it was            
-        self.sbnd.femb_config.femb.write_reg( 3, (reg3&0x7fffffff), board = "femb" )
+#        self.sbnd.femb_config.femb.write_reg( 3, (reg3&0x7fffffff), board = "femb" )
         
     def setup_no_change(self):
         
@@ -566,6 +542,8 @@ class main:
                                                                data_type = "int", num = packets, header = False)
             print ("Chip {}".format(i))
             self.sbnd.analyze.UnpackData(path = "data", data = data)
+
+        plt.show()
             
         #Bring everything back the way it was            
         self.sbnd.femb_config.femb.write_reg(self.sbnd.femb_config.REG_TEST_PULSE, reg_5_original, "femb")
@@ -601,23 +579,23 @@ class main:
         
         
         
-        self.sbnd.femb_config.fe_reg.set_fe_board(sts=1, snc=0, sg=3, st=1, smn=0, sbf=1, 
-                       slk = 0, stb = 0, s16=0, slkh=0, sdc=0, sdacsw2=0, sdacsw1=1, sdac=0, show="True")
+        self.sbnd.femb_config.fe_reg.set_fe_board(sts=0, snc=1, sg=3, st=1, smn=0, sbf=1, 
+                       slk = 0, stb = 0, s16=0, slkh=0, sdc=0, sdacsw2=0, sdacsw1=0, sdac=0, show="True")
         
         self.sbnd.femb_config.adc_reg.set_adc_board(d=0, pcsr=1, pdsr=1, slp=0, tstin=0,
                  clk = 0, frqc = 0, en_gr = 0, f0 = 0, f1 = 0, 
                  f2 = 0, f3 = 0, f4 = 0, f5 = 0, slsb = 0, show="True")
         
-        self.sbnd.femb_config.configAdcAsic()
+#        self.sbnd.femb_config.configAdcAsic()
         
         self.sbnd.femb_config.configFeAsic()
         time.sleep(0.1)
         
-        #Enable test pulses
-        self.sbnd.femb_config.femb.write_reg(18, 0x0, board = "femb")
-        
-        #Enable external test pulse
-        self.sbnd.femb_config.femb.write_reg(16, 0x0, board = "femb")
+#        #Enable test pulses
+#        self.sbnd.femb_config.femb.write_reg(18, 0x0, board = "femb")
+#        
+#        #Enable external test pulse
+#        self.sbnd.femb_config.femb.write_reg(16, 0x0, board = "femb")
         
         logging.basicConfig(level=logging.DEBUG,
                     format='[%(levelname)s] (%(threadName)-10s) %(message)s',
@@ -650,7 +628,7 @@ class main:
         
         for i in range(settings.chip_num):
             self.sbnd.femb_config.fe_reg.info.fe_chip_status(i, status = "sent")
-            self.sbnd.femb_config.adc_reg.info.adc_chip_status(i, status = "sent")
+#            self.sbnd.femb_config.adc_reg.info.adc_chip_status(i, status = "sent")
             
         sys.stdout.close()
         sys.stdout = screendisplay
@@ -710,7 +688,7 @@ class main:
                 print ("Still going at {}".format(datetime.now().strftime('%H:%M:%S')))
                 check_time = time.time()
 
-        t1.join()
+#        t1.join()
         newest = [[],[],[],[]]
         print ("Separating Packets...")
         separated_path = self.sbnd.analyze.Seperate_Packets(self.triggered_path)
@@ -722,6 +700,8 @@ class main:
             print (newest[i])
             
             self.sbnd.analyze.UnpackData(path = "default", data = newest[i], return_data=False)
+            
+        plt.show()
         
     def help_info(self):
         print ("Type in the function you want to call.")
@@ -836,19 +816,40 @@ class main:
         return
     
     def quick_update(self):
-        self.sbnd.analyze.UnpackData(path = "default", 
-                                 data = "D:\\nEXO\\2018_03_07\\Triggered_200hz\\Separated_Packets\\Chip0_Packet50.dat" , 
-                                                       return_data=False)
-#        self.sbnd.femb_config.fe_reg.set_fe_board(sts=1,sg=3, sbf = 0, st=2, snc=1,
-#                                                          sdacsw1=0, sdacsw2=1, sdac=5)
-#        
-#        self.sbnd.femb_config.adc_reg.set_adc_board(d=0, pcsr=1, pdsr=1, slp=0, tstin=0,
-#                                                    clk = 0, frqc = 0, en_gr = 1, f0 = 0, f1 = 0, 
-#                                                    f2 = 0, f3 = 0, f4 = 1, f5 = 0, slsb = 0, show="FALSE")     
-#        
-#        self.sbnd.femb_config.configAdcAsic(board = "wib")
-#        self.sbnd.femb_config.configFeAsic(board = "wib")
+#        self.sbnd.analyze.UnpackData(path = "default", 
+#                                 data = "D:\\nEXO\\2018_03_07\\Triggered_200hz\\Separated_Packets\\Chip0_Packet50.dat" , 
+#                                                       return_data=False)
+        self.sbnd.femb_config.fe_reg.set_fe_board(sts=1,sg=3, sbf = 0, st=1, snc=1,
+                                                          sdacsw1=0, sdacsw2=0, sdac=5)
         
+        self.sbnd.femb_config.adc_reg.set_adc_board(d=0, pcsr=1, pdsr=1, slp=0, tstin=0,
+                                                    clk = 0, frqc = 0, en_gr = 1, f0 = 0, f1 = 0, 
+                                                    f2 = 0, f3 = 0, f4 = 1, f5 = 0, slsb = 0, show="FALSE")     
+#        self.sbnd.femb_config.adc_reg.set_adc_chn(chip=0, chn=7, d=1)
+#        self.sbnd.femb_config.adc_reg.set_adc_chn(chip=0, chn=15, d=1)
+#        self.sbnd.femb_config.adc_reg.set_adc_chn(chip=1, chn=1, d=1)
+#        self.sbnd.femb_config.adc_reg.set_adc_chn(chip=1, chn=9, d=1)
+#        self.sbnd.femb_config.adc_reg.set_adc_chn(chip=1, chn=15, d=1)
+#        self.sbnd.femb_config.adc_reg.set_adc_chn(chip=2, chn=5, d=1)
+#        self.sbnd.femb_config.adc_reg.set_adc_chn(chip=2, chn=15, d=1)
+#        self.sbnd.femb_config.adc_reg.set_adc_chn(chip=3, chn=1, d=1)
+#        self.sbnd.femb_config.adc_reg.set_adc_chn(chip=3, chn=11, d=1)
+        self.sbnd.femb_config.configAdcAsic(board = "wib")
+        self.sbnd.femb_config.configFeAsic(board = "wib")
+        
+    def quick_check(self, board):
+        for i in range(32,40,1):
+            response = self.sbnd.femb_config.femb.read_reg(i, board = board)
+            print("Register {} is {}".format(i,response))
+			
+    def quick_analysis(self, analysis_files):
+        for i in analysis_files:
+            print (i)
+            self.sbnd.analyze.UnpackData(path = "default", data = i, return_data=False)
+    
+    def seperate(self):
+        self.sbnd.analyze.Seperate_Packets("C:\\Users\\Eric\\Documents\\BNL\\nEXO\\Stanford\\BNL_ASIC_Data\\")
+    
     def __init__(self):
             self.sbnd = FEMB_DAQ()
             self.cali_path = ""
@@ -857,7 +858,7 @@ class main:
             self.sts_tuple = ((0,"CapOff"), (1,"CapOn"))
             self.snc_tuple = ((0,"900mV"), (1,"200mV"))
             self.sg_tuple  = [(3,"25.0mV")]
-            self.st_tuple  = ((2,"0.5us"), (0,"1.0us"), (3,"2.0us"), (1,"3.0us"))
+            self.st_tuple  = [(1,"3.0us")]
             self.sdc_tuple = ((0, "DC"), (1, "AC"))
             self.sdf_tuple = ((0, "BufOff" ), (1, "BufOnn" )) 
             self.slk0_tuple = ((0,"500pA"), (1, "100pA"))
@@ -869,6 +870,9 @@ class main:
             
 if __name__ == "__main__":
 #    main().quick_update()
+#    main().quick_check(board = "wib")
+#    main().quick_analysis(settings.analysis_files)
+#    main().seperate()
     main().loop()
     
     

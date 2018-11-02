@@ -15,6 +15,7 @@ Last modified: 10/18/2016 4:37:37 PM
 #import numpy as np
 #import scipy as sp
 #import pylab as pl
+from scipy.integrate import simps
 from openpyxl import Workbook
 from openpyxl.styles import Border, Alignment, Font, Side, PatternFill
 import numpy as np
@@ -36,15 +37,12 @@ import warnings
 import gc
 from user_settings import user_editable_settings
 settings = user_editable_settings()
-from pympler import asizeof
 analyze = Data_Analysis()
 
 ####################################################################################################################################################
-#This function should be run after the RMS file with the slope data has already been made.  It takes in the root folder, the specific directory
-#to look through, the existing workbook to save to, and the total number of chips.  If will read the binary file created for RMS data analysis.
-#It will find the mean and RMS of the data, and convert it to other units, and format it all for final analysis in the RMS spreadsheet.
 
-def rms_process(test_dir, wb):
+
+def baseline_process(test_dir, wb):
     
     rms_data_file = test_dir + "\\pedestal.dat"
 
@@ -209,8 +207,8 @@ def rms_process(test_dir, wb):
     mean_np = np.resize(mean_np,[chip_num,16]) 
     stuck_np =  np.resize(stuck_np,[chip_num,16])
     
-#Search for the correct sheet in the workbook passed to this function
-    ws = wb.get_sheet_by_name(name = sheet_title)
+    ws = wb.create_sheet(0)
+    ws.title = "{},{},{}".format(baseline,gain,peak)
 
     center = Alignment(horizontal='center')
 
@@ -224,44 +222,16 @@ def rms_process(test_dir, wb):
 #the number of chips being analyzed, the title you want, and ws.  These must match up with the actual data bring put in these chunks below
     make_title(0,4,"Mean Value (ADC Counts)",ws)
     make_title(1,4,"RMS Width (ADC Counts)",ws)
-    make_title(2,4,"Stuck Bit Matrix - A 1 indicates that a stuck bit was detected for that channel",ws)
+    make_title(2,4,"Stuck Bit Matrix - A 0 indicates that a stuck bit was detected for that channel",ws)
     make_title(5,4,"Mean value in mV",ws)
     make_title(6,4,"RMS in electrons",ws)
     
-#Grab the existing slope data for each channel as found by the previous script and put it in a matrix to use
-    mv_slope = []
-    electron_slope = []
-
     for chip_id in range(chip_num):
         for chn in range(16):
-            mv_slope.append(ws['{}{}'.format(chr(ord('A') + chn + 1), chip_id+4+(3*(chip_num+3)))].value)
-        
-            electron_slope.append(ws['{}{}'.format(chr(ord('A') + chn + 1), chip_id+4+(4*(chip_num+3)))].value)
-
-    mv_slope = np.resize(mv_slope, [chip_num,16])
-    electron_slope = np.resize(electron_slope, [chip_num,16])
-
-#    Couldn't get borders to work, maybe at a later time
-#    ws.cell('B2').border = Border(outline=Side(border_style='thick'))]
-
-
-#Formatting of data
-
-    for chip_id in range(chip_num):
-        for chn in range(16):
-            if ((mv_slope[chip_id,chn] != None) and (electron_slope[chip_id,chn])):
-    #First chunk is Mean value in ADC counts
-                ws['{}{}'.format(chr(ord('A') + chn + 1),chip_id+4)].value=mean_np[chip_id,chn]
-    #Second chunk is Standard Deviation in ADC counts
-                ws['{}{}'.format(chr(ord('A') + chn + 1),chip_id+4+(chip_num+3))].value=std_np[chip_id,chn]
-    #Third chunk is the binary stuck bit array
-                ws['{}{}'.format(chr(ord('A') + chn + 1),chip_id+4+(2*(chip_num+3)))].value=stuck_np[chip_id,chn]
-    #Sixth chunk is Mean value in mV (baseline)
-                ws['{}{}'.format(chr(ord('A') + chn + 1),
-                                 chip_id+4+(5*(chip_num+3)))].value=mean_np[chip_id,chn]/mv_slope[chip_id,chn]
-    #Seventh chunk is Standard Deviation in electrons (ENC)
-                ws['{}{}'.format(chr(ord('A') + chn + 1),
-                                 chip_id+4+(6*(chip_num+3)))].value=std_np[chip_id,chn]/electron_slope[chip_id,chn]
+#            if ((mv_slope[chip_id,chn] != None) and (electron_slope[chip_id,chn])):
+            ws['{}{}'.format(chr(ord('A') + chn + 1),chip_id+4)].value=mean_np[chip_id,chn]
+            ws['{}{}'.format(chr(ord('A') + chn + 1),chip_id+4+(chip_num+3))].value=std_np[chip_id,chn]
+            ws['{}{}'.format(chr(ord('A') + chn + 1),chip_id+4+(2*(chip_num+3)))].value=stuck_np[chip_id,chn]
 
 #Choose which chunks of data you want to mark as stuck or not.  You need to pass the stuck matrix, total chips, which chunk to analyze and ws
     for chunk in range(3):
@@ -278,91 +248,196 @@ def rms_process(test_dir, wb):
     mean_np = []
     stuck_np = []
     
+def rms_process(test_dir, wb):
+    ws = wb.active
+    #Get pulsed spreadsheet
+    
+#Grab the existing slope data for each channel as found by the previous script and put it in a matrix to use
+    std_slope = []
+    electron_slope = []
+
+    for chip_id in range(settings.chip_num):
+        for chn in range(16):
+            std_slope.append(ws['{}{}'.format(chr(ord('A') + chn + 1), chip_id+4+(settings.chip_num+3))].value)
+        
+            electron_slope.append(ws['{}{}'.format(chr(ord('A') + chn + 1), chip_id+4+(3*(settings.chip_num+3)))].value)
+
+    std_slope = np.resize(std_slope, [settings.chip_num,16])
+    electron_slope = np.resize(electron_slope, [settings.chip_num,16])
+
+#    Couldn't get borders to work, maybe at a later time
+#    ws.cell('B2').border = Border(outline=Side(border_style='thick'))
+    
+    
+    #Get RMS Spreadsheet
+    rms_values = []
+    for chip_id in range(settings.chip_num):
+        for chn in range(16):
+#                ws['{}{}'.format(chr(ord('A') + chn + 1),chip_id+4)].value=mean_np[chip_id,chn]
+#                ws['{}{}'.format(chr(ord('A') + chn + 1),chip_id+4+(settings.chip_num+3))].value=std_np[chip_id,chn]
+#                ws['{}{}'.format(chr(ord('A') + chn + 1),chip_id+4+(2*(settings.chip_num+3)))].value=stuck_np[chip_id,chn]
+#    #Sixth chunk is Mean value in mV (baseline)
+#                ws['{}{}'.format(chr(ord('A') + chn + 1),
+#                                 chip_id+4+(5*(chip_num+3)))].value=mean_np[chip_id,chn]/mv_slope[chip_id,chn]
+#Seventh chunk is Standard Deviation in electrons (ENC)
+            ws['{}{}'.format(chr(ord('A') + chn + 1),
+                             chip_id+4+(6*(settings.chip_num+3)))].value=(std_slope[chip_id,chn]/electron_slope[chip_id,chn])/0.0001602176
+            rms_values.append((std_slope[chip_id,chn]/electron_slope[chip_id,chn])/0.0001602176)
+               #fC per electron
+               
+    chns = []
+    for i in range(len(rms_values)):
+        chns.append(i)
+    fig = plt.figure(figsize=(16, 12), dpi=80)
+    ax = fig.add_subplot(1,1,1)
+    ax.scatter(chns, rms_values)
+    ax.set_xlabel('Channels', fontsize = 24)
+    ax.set_ylabel('Noise (RMS Electrons)', fontsize = 24)
+    ax.set_title("RMS Noise for each channel", fontsize=30)
+    ax.set_xlim([-1,65])
+    ax.tick_params(labelsize=18)
+    fig.savefig(test_dir + "Noise.jpg")
+    plt.close(fig)
+    
 
 ####################################################################################################################################################
-#This it the first function to run, it takes in the root folder, the directory to look through, whether the internal or FPGA DAC was used, the
-#workbook and the number of chips.  It looks through the data that was pulsed for each DAC value and records the peak value in the Pulse
-#spreadsheet.
 
-def gain_process(directory, intdac, wb):
+def gain_process(directory, wb, wb_base):
+    
+#    ws_base = wb_base.active
+#    baselines = [[],[],[],[]]
+#    for chip in range(settings.chip_num):
+#        for chn in range(16):
+#            baselines[chip].append(ws_base.cell(row=4 + chip, column=2 + chn).value)
+    
     ws = wb.active
     ws = wb.create_sheet(0)
+    ws_area = wb.create_sheet(0)
+    ws_ratio = wb.create_sheet(0)
 
-#Specify whether it's the FPGA or internal calibration so it knows which directory to look into and how many steps there were
-    if intdac == 1:
-        msb = 64
-        calidir ="cali_intdac\\"
-        init = "intdac_"   
-        print ("Internal DAC Pulse")
-    else:
-        msb = 32
-        calidir ="cali_fpgadac\\"
-        init = "fpgadac_"
-        print ("External FPGA DAC Pulse")
-        
+    calidir ="cali_intdac\\"
+    init = "intdac_"   
+    print ("Internal DAC Pulse")
+    print (directory)
+
     config_file = (glob.glob(directory + "*chip_settings*")[0])
     
     with open(config_file, 'rb') as f:
         data = pickle.load(f)
-        baseline = (data["base"])
-        gain = (data["gain"])
-        peak = (data["peak"])
+    baseline = (data["base"])
+    gain = (data["gain"])
+    peak = (data["peak"])
+    print("Peak is {}".format(peak))
+    if (peak == "0.5us"):
+        calibration_bounds = [26,35]
+    elif (peak == "1.0us"):
+        calibration_bounds = [26,35]
+    elif (peak == "2.0us"):
+        calibration_bounds = [24,39]
+    elif (peak == "3.0us"):
+        calibration_bounds = [20,45]
+    else:
+        sys.exit("No peak found")
 
 #Build the title of the sheet
     sheet_title = gain[0:4] + "," + peak[0:3]
     print (sheet_title)
     ws.title = sheet_title
-
-    for dacvalue in range(msb):
+    ws_area.title = sheet_title + "_Area"
+    ws_ratio.title = sheet_title+ "_Ratio"
+    done = False
+    
+    center = Alignment(horizontal='center')
+    for sheets in [ws, ws_area, ws_ratio]:
+        sheets.merge_cells('B1:Q1')
+        sheets['B1'].alignment = center
+    ws['B1'].value = "Average pulse height corrected for baseline (ADC counts)"
+    ws_area['B1'].value = "Average area under curve corrected for baseline (ADC counts * time)"
+    ws_ratio['B1'].value = "Ratio between pulse height and area"
+#    for dacvalue in range(0, 14, 1):
+    for dacvalue in range(0, 14, 1):
+        print("Collecting data for DAC step {}".format(dacvalue))
+        
+        plot_directory = directory + "cali_intdac\\Amp{}\\".format(dacvalue)
+        try: 
+            os.makedirs(plot_directory)
+        except OSError:
+            if os.path.exists(plot_directory):
+                pass
+            
 
 #Find the total length of raw data file in bytes and read it into memory
         raw_data_file = directory + calidir + init + "%x"%dacvalue + ".dat"
-        plot_dir = directory + calidir + "\\"
-        value_name = "%x"%dacvalue
 
         with open(raw_data_file, 'rb') as f:
             raw_data = f.read()
-            
-        start_of_packet = (b"\xde\xad\xbe\xef")
-            
-        start_of_chip = []
-        for m in re.finditer(start_of_packet, raw_data):
-            start_of_chip.append(m.start())
-            
+
+        test0 = (b"\xde\xad\xbe\xef\xca\xfe[\x00-\xff][\x00-\xff][\x00-\xff][\x00-\xff][\x00-\xff][\x00-\xff]" +
+                b"\x00")
+        
+        test1 = (b"\xde\xad\xbe\xef\xca\xfe[\x00-\xff][\x00-\xff][\x00-\xff][\x00-\xff][\x00-\xff][\x00-\xff]" +
+                b"\x01")
+        
+        test2 = (b"\xde\xad\xbe\xef\xca\xfe[\x00-\xff][\x00-\xff][\x00-\xff][\x00-\xff][\x00-\xff][\x00-\xff]" +
+                b"\x02")
+        
+        test3 = (b"\xde\xad\xbe\xef\xca\xfe[\x00-\xff][\x00-\xff][\x00-\xff][\x00-\xff][\x00-\xff][\x00-\xff]" +
+                b"\x03")
+        test = [test0, test1, test2, test3]
+        all_packets = [[],[],[],[]]
+        for chip in [0,1,2,3]:
+            count = 0
+            for m in re.finditer(test[chip], raw_data):
+    #            print (m)
+    #            print (m.start())
+
+    #                print ("Chip {} starts at {}".format(chip, m.start()))
+                count = count+1
+                all_packets[chip].append(m.start())
+    #            sys.exit("first one")
+
         chip_num = settings.chip_num    
-        if (len(start_of_chip) != chip_num):
-            print ("PULSE Analysis--> {} doesn't have {} chips in the file!".format(raw_data_file, chip_num))
-            
-        separated_by_chip = [(raw_data[start_of_chip[0] : start_of_chip[1]]),
-                             (raw_data[start_of_chip[1] : start_of_chip[2]]),
-                             (raw_data[start_of_chip[2] : start_of_chip[3]]),
-                             (raw_data[start_of_chip[3] : ])]
-            
+
         
         chip_data = [[],[],[],[]]
-        for i in range(chip_num):
-            chip_data[i] = analyze.UnpackData(path = "bytes", data = separated_by_chip[i], return_data = True)
+        peak_data = [[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+                     [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+                     [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+                     [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],]
+        integral_data = [[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+                         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+                         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+                         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],]
+        for i in range(4):
+            for j in range(len(all_packets[i])):
+                all_packets[i][j] = int(all_packets[i][j]/2)
         
-        print_pulses(plot_dir, chip_data, value_name)
-#Formatting of titles and labels
-        center = Alignment(horizontal='center')
+        print("Looking into each chip")
+#        print(all_packets[0])
+#        print(all_packets[1])
+        for i in [0,1,2,3]:
+            chip_data[i] = analyze.UnpackDataPulses(data = raw_data, 
+                     all_starts = all_packets[i], return_data = True)
+            print("Data Analyzed for chip {}!".format(i))
+            fig = analyze.UnpackDataPulses(data = raw_data,
+                     all_starts = all_packets[i], return_data = False, plot_length = 1000)
+            print("Plot Created for chip {}!".format(i))
+            fig.savefig (plot_directory + "Chip{}Amp{}".format(i,dacvalue)+".jpg")
+            print("Figure Saved for chip {}!".format(i))
+            plt.close(fig)
+            print("Figure Closed for chip {}!".format(i))
+#        print_pulses(plot_dir, chip_data, value_name)
+        for sheets in [ws, ws_area, ws_ratio]:
+    
+    #Current way of doing the make_title function, but with a title that changes with each DAC step
+            row1=2+(dacvalue*(chip_num+3))
+            sheets.merge_cells(start_row=row1,start_column=2,end_row=row1,end_column=17)
+            sheets['{}{}'.format("A",row1)].value = str(dacvalue)
 
-        title = ("Baseline = {}, Gain = {}, Peaking Time = {}".format(baseline, gain, peak))
-#Set up the title blocks
-        ws.merge_cells('B1:Q1')
-        ws['B1'].value = title
-        ws['B1'].alignment = center
-
-#Current way of doing the make_title function, but with a title that changes with each DAC step
-        row1=2+(dacvalue*(chip_num+3))
-        ws.merge_cells(start_row=row1,start_column=2,end_row=row1,end_column=17)
-        ws['{}{}'.format("A",row1)].value = str(dacvalue)
-        ws['{}{}'.format("B",row1)].value = "Average Peak Height (ADC Counts) for DAC step " + str(dacvalue+1)
-        ws['{}{}'.format("B",row1)].alignment = center
-
-
-        for chip in range(chip_num):
+        for chip in [0,1,2,3]:
+            print("Analyzing chip {}".format(chip))
             for chn in range(16):
+                print("Analyzing channel {}".format(chn))
 
 #Pull out one channel's array, get 
                 np_data = np.array(chip_data[chip][chn])
@@ -370,47 +445,141 @@ def gain_process(directory, intdac, wb):
                     warnings.simplefilter("ignore", category=RuntimeWarning)
                     pedmean = np.nanmean(np_data[0:2048])
                 maxmean = np.max(np_data[0:2048])
+                
+#                print("Data for {} {} is {}".format(chip,chn,np_data[0:2048]))
 
 #Find peaks while inputting the "minimum peak height", which must be higher than half the max value found 
 #and "minimum peak distance".  Returns the index of the peaks
-                peaks_index = detect_peaks(x=np_data, mph=abs((maxmean+pedmean)/2), mpd=(500/2)) 
+                peaks_index = detect_peaks(x=np_data, mph=((maxmean + pedmean) / 2), mpd=(500/2)) 
                 peaks_value = []
+                pulses = 0
+                index = 1
+                integral = []
+                
+#                if ((dacvalue < 14) and (chip == 3) and (chn == 10)):
+#                    print ("Chip {}, Channel {}".format(chip, chn))
+                while(pulses < 10):
+                    corrected_data = []
+                    if (index > (len(peaks_index) - 1)):
+                        break
+                    #15 us before and after the peak
+                    begin = peaks_index[index] - 30
+                    end = peaks_index[index] + 30
+                                     
+                    #data outside of pulse to get representative baseline
+                    begin_data = np_data[begin:begin+15]
+                    end_data = np_data[end-15:end]
+                    baseline = np.concatenate((begin_data,end_data))
+                    outside_baseline = np.nanmean(baseline)
+                    
+                    for i in range(len(np_data)):
+                       corrected_data.append(np_data[i] - outside_baseline)
+                               
+#                    np_data[i] = np_data[i] - baselines[chip][chn]
+                    
+                    peak_only = corrected_data[begin:end]
+                    
+#                        fig, ax = analyze.quickPlot(peak_data)
+#                        plt.show()
+#                        resp = raw_input("Plot ok? y/n\n")
+#                        if (resp != "y"):
+#                            index = index + 1
+#                            continue
 
-#Go from index to the actual value
+                    integral_window = peak_only[calibration_bounds[0]:calibration_bounds[1]]
+#                            area = simps(y=integral_data2, dx = 5E-7)
+                    total_sum = 0
+                    for point in integral_window:
+                        total_sum = total_sum + point
+                    integral.append(total_sum)
+                    subtitle_text = (.25,.94)
+                    fig, ax = analyze.quickPlot(peak_only)
+                    
+                    for xc in calibration_bounds:
+                        plt.axvline(x=xc/2, color='r', linestyle='--')
+                    ax.set_title("Chip{}Chn{}Amp{}_{}".format(chip,chn,dacvalue,pulses), fontsize=30)
+                    ax.xaxis.label.set_size(30)
+                    ax.yaxis.label.set_size(30)
+                    for tick in ax.xaxis.get_major_ticks():
+                        tick.label.set_fontsize(20)
+                    for tick in ax.yaxis.get_major_ticks():
+                        tick.label.set_fontsize(20) 
+                    ax.annotate("Sum is {}".format(total_sum), xy=subtitle_text,  xycoords='axes fraction',
+                        xytext=subtitle_text, textcoords='axes fraction',
+                        horizontalalignment='center', verticalalignment='center', fontsize = 20
+                        )
+                    fig.savefig (plot_directory + "Chip{}Chn{}Amp{}_{}".format(chip,chn,dacvalue,pulses)+".jpg")
+                    plt.close(fig)
+                    
+                    index = index + 1
+                    pulses = pulses + 1
+
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", category=RuntimeWarning)
+                    average_integral = np.mean(np.array(integral))
+                    integral_data[chip][chn] = (average_integral)
+
                 for i in peaks_index :
                     peaks_value.append(np_data[i])
 
-#If there were any peaks, average them
                 if len(peaks_value) != 0 :
+                    print("There were peaks")
                     with warnings.catch_warnings():
                         warnings.simplefilter("ignore", category=RuntimeWarning)
                         peaksmean = np.nanmean(peaks_value[0:-1])
-
-#Or else just return the mean value of the baseline                    
+                        peak_data[chip][chn] = peaksmean
+#                        print ("Peaks_value is {}".format(peaks_value))
+#                        print ("Peak data {} {} is {}".format(chip, chn, peaksmean))
                 else:
+                    print("There were no peaks")
                     peaksmean = pedmean
-                chip_data[chip][chn] = peaksmean
-
+                    peak_data[chip][chn] = peaksmean
+                print("And the average is {:.2f}".format(peak_data[chip][chn]))  
         ft = Font(bold=True)
-        #write to excel file
-        for chip_id in range(chip_num):
+        print("Writing Excel File")
+#        print (peak_data)
+#        print (integral_data)
+        for chip_id in [0,1,2,3]:
             for chn in range(16):
                 if (chip_id == 0):
 
-#Quick way of making the Channel cells
                     vl = "Channel " + str(chn) 
                     ws['{}{}'.format(chr(ord('A') + chn + 1), 3+(dacvalue*(chip_num+3)))].value = vl
                     ws['{}{}'.format(chr(ord('A') + chn + 1), 3+(dacvalue*(chip_num+3)))].font = ft
+                       
+                    ws_area['{}{}'.format(chr(ord('A') + chn + 1), 3+(dacvalue*(chip_num+3)))].value = vl
+                    ws_area['{}{}'.format(chr(ord('A') + chn + 1), 3+(dacvalue*(chip_num+3)))].font = ft
+                            
+                    ws_ratio['{}{}'.format(chr(ord('A') + chn + 1), 3+(dacvalue*(chip_num+3)))].value = vl
+                    ws_ratio['{}{}'.format(chr(ord('A') + chn + 1), 3+(dacvalue*(chip_num+3)))].font = ft
+                             
+                             
+                             
+                column = chr(ord('A') + chn + 1)
+                row = chip_id+4+(dacvalue*(chip_num+3))
+                ws['{}{}'.format(column, row)].value = peak_data[chip_id][chn]
+#                print ("In {}{}, we printed {}".format(column, row, peak_data[chip_id][chn]))
+                
+                ws_area['{}{}'.format(column, row)].value = integral_data[chip_id][chn]
+#                print ("In {}{}, we printed {}".format(column, row, integral_data[chip_id][chn]))
+                
+                if (integral_data[chip_id][chn] != 0):
+                    result = (peak_data[chip_id][chn])/(integral_data[chip_id][chn])
+                    ws_ratio['{}{}'.format(chr(ord('A') + chn + 1), chip_id+4+(dacvalue*(chip_num+3)))].value = result
+                else:
+                    ws_ratio['{}{}'.format(chr(ord('A') + chn + 1), chip_id+4+(dacvalue*(chip_num+3)))].value = 0
 
-#Writing the actual data
-                ws['{}{}'.format(chr(ord('A') + chn + 1), 
-                   chip_id+4+(dacvalue*(chip_num+3)))].value = chip_data[chip_id][chn]
-
-#Quick way of making the Chip cells
             ws['{}{}'.format("A", chip_id+4+(dacvalue*(chip_num+3)))].value = "Chip " + str(chip_id)
             ws['{}{}'.format("A", chip_id+4+(dacvalue*(chip_num+3)))].font = ft
-
-        print ("DAC Step: %x, Average Amplitude for Chip 1, Channel 0: %d"%(dacvalue, chip_data[1][0]))
+               
+            ws_area['{}{}'.format("A", chip_id+4+(dacvalue*(chip_num+3)))].value = "Chip " + str(chip_id)
+            ws_area['{}{}'.format("A", chip_id+4+(dacvalue*(chip_num+3)))].font = ft
+                    
+            ws_ratio['{}{}'.format("A", chip_id+4+(dacvalue*(chip_num+3)))].value = "Chip " + str(chip_id)
+            ws_ratio['{}{}'.format("A", chip_id+4+(dacvalue*(chip_num+3)))].font = ft
+        print ("DAC Step: %x, Average Amplitude for Chip 0, Channel 0: %d"%(dacvalue, peak_data[0][0]))
+        if (done == True):
+            return
 
 #Make the formatting for each new chunk of data (The Chip# and Channel# cells as well as the merged title.  Takes in the number of the chunk (0, 1, 2),
 #the number of chips being analyzed, the title you want, and ws.
@@ -485,7 +654,7 @@ def ENC_plots(wb,chip_num,plot_dir):
 
 #Build the sheet name from the baseline, gain and peaking time parameter and find it
                         sheet = gain+","+peaking_time+","+base
-                        ws = wb.get_sheet_by_name(name = sheet)
+                        ws = wb[sheet]
 
 #On each sheet, the 6th chunk will have the ENC in electrons, so that channel's value is grabbed, as well as the fill color
                         ENC.append(ws['{}{}'.format(chr(ord('A') + chn + 1),chip_id+4+(6*(chip_num+3)))].value)

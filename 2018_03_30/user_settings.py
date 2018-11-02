@@ -14,10 +14,10 @@ class user_editable_settings:
         #How much room the C dll accounts for in case packets start coming in faster than they can be written
         self.buffer_size = 50
         #How many packets to combine into one file.  This is to speed up writing to disk, a later function will separate them
-        self.packets_per_file = 4
+        self.packets_per_file = 5000
         #The path to the C dll that gets the triggered data
-        self.DLL_LOCATION = "C:\\Users\\vlsilab2\\Desktop\\cprogram2\\read_socket\\x64\\Release\\read_socket.dll"
-
+        #self.DLL_LOCATION = "C:\\Users\\xenon\\Desktop\\nEXO_BNL_ASIC_Code\\2018_4_15\\read_socket.dll"
+        self.DLL_LOCATION = "D:\\nEXO Python\\cprogram2\\read_socket\\x64\\Release\\read_socket.dll"
         
         #CALIBRATION SETTINGS############################################################################
         #The temp you're saying the run was at.  This affects how the analysis looks at the test pulses
@@ -28,40 +28,43 @@ class user_editable_settings:
         self.long_cable = False
         #Path everything will be saved at
         self.path = "D:\\nEXO\\" + (datetime.now().strftime('%Y_%m_%d'))  +"\\" 
+		#Files to analyze with a quick check:
+        self.analysis_files = ["Z:\\nEXO - Charge Readout\\Stanford Setup\\Stanford Trip April 2018\\Triggered_pulsed_cathode\\Separated_Packets\\Chip2_Packet10.dat"]
         #Default synchronization settings.  If startup shows that it has to constantly re-synch, change these to what it says
 
         #COLD
         
-#        self.REG_LATCHLOC1_4_data = 0x0B0C0C0C
+#        self.REG_LATCHLOC1_4_data = 0x0B0C0B0B
 #        self.REG_CLKPHASE_data = 0x00
 #        #Read clock.  A pll_0 of 0x00040003 is a setting of 3 for ASIC 0 and 4 for ASIC 1
 #        #Reg 21, 22, 23
-#        self.read_asic_1_0 = 0x00140014
+#        self.read_asic_1_0 = 0x00020006
 #        self.read_asic_3_2 = 0x00020014
 #        self.read_asic_neg = 0x80000000
-#        
-#        #Write to ASIC
-#        #Reg 24, 25, 26
-#        self.write_asic_1_0 = 0x00000000
-#        self.write_asic_3_2 = 0x00000000
-#        self.write_asic_neg = 0x80000000
         
         #WARM
-        
-        self.REG_LATCHLOC1_4_data = 0x0C0C0C0C
-        self.REG_CLKPHASE_data = 0xFF000000
+        self.REG_LATCHLOC1_4_data = 0x06060606
+        self.REG_CLKPHASE_data = 0xFFdf0000
+#        self.REG_LATCHLOC1_4_data = 0x14111112
+#        self.REG_CLKPHASE_data = 0xFF000000
         #Read clock.  A pll_0 of 0x00040003 is a setting of 3 for ASIC 0 and 4 for ASIC 1
         #Reg 21, 22, 23
-        self.read_asic_1_0 = 0x00140014
-        self.read_asic_3_2 = 0x000E0014
-        self.read_asic_neg = 0x80000000
-        
-        #Write to ASIC
-        #Reg 24, 25, 26
-        self.write_asic_1_0 = 0x00020002
-        self.write_asic_3_2 = 0x00000002
-        self.write_asic_neg = 0x80000000
+        self.read_asic_1_0 = 0x00000020
+        self.read_asic_3_2 = 0x00000020
+        self.read_asic_neg = 0x800F0000
+#        self.read_asic_1_0 = 0x0002001C
+#        self.read_asic_3_2 = 0x0000000A
+#        self.read_asic_neg = 0x80020000
 
+        #GENERAL SETTINGS###############################################################################
+        self.chip_num = 4
+        #Which IP addresses you gave those 4 sockets
+        #self.CHIP_IP = ['192.168.121.83','192.168.121.82','192.168.121.81','192.168.121.80']
+        self.CHIP_IP = ['192.168.121.51','192.168.121.60','192.168.121.70','192.168.121.80']
+        self.FEMB_VER = "nEXO(FE-ASIC with internal DAC)"
+        
+        #These settings are only necessary if you need to use the long cable
+        
 #1 is Reg21
         self.cold_min1   = [0x12, 0x7,  0xA,  0x7 ]
         self.cold_max1   = [0x1A, 0xE,  0x12, 0x14]
@@ -83,11 +86,5 @@ class user_editable_settings:
         
         self.bath_latch_down = [0,  0,  0,  0 ]
         self.bath_latch_up   = [0,  0,  0,  0 ]
-        
-        #GENERAL SETTINGS###############################################################################
-        self.chip_num = 4
-        #Which IP addresses you gave those 4 sockets
-        self.CHIP_IP = ['192.168.121.51', '192.168.121.60', '192.168.121.70', '192.168.121.80']
-        self.FEMB_VER = "nEXO(FE-ASIC with internal DAC)"
         
         self.error_codes = [0x2b7, 0x15b, 0x56e]

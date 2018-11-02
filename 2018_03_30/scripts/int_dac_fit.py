@@ -51,7 +51,7 @@ def int_dac_fit(env=0):
    
 
 
-    cresults = sm.OLS(amp[3:65],sm.add_constant(dacbins[3:65])).fit()
+    cresults = sm.OLS(amp[3:64],sm.add_constant(dacbins[3:64])).fit()
     cslope = cresults.params[1]
     cconstant = cresults.params[0]
 #    if ( env == 0 ):

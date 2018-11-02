@@ -282,6 +282,8 @@ class FEMB_DAQ:
             self.femb_config.femb.write_reg(5, self.reg_5_value, board = "femb")
             
             np_data = self.femb_config.get_data_chipXchnX(chip = 1, chn = 7, packets = 42)
+            print(np_data)
+            print(np_data[0:2048])
             pedmean = np.mean(np_data[0:2048])
             maxmean = max(np_data[0:2048])
 
@@ -295,8 +297,8 @@ class FEMB_DAQ:
             data_to_plot = np_data[(peaks_index[0]-10) : (peaks_index[0]+10)]
             delay_plot = self.analyze.quickPlot(data_to_plot)
             
-            delay_plot.savefig (delay_plot_path+"Delay_" + str(dly) + ".jpg")
-            plt.close(delay_plot)
+            delay_plot[0].savefig (delay_plot_path+"Delay_" + str(dly) + ".jpg")
+            plt.close(delay_plot[0])
             
             print(peaks_index)
             print(peaks_value)
@@ -332,7 +334,7 @@ class FEMB_DAQ:
         self.femb_config.femb.write_reg(16, 0x2, board = "femb")
             
         reg_5_original = self.femb_config.femb.read_reg(self.femb_config.REG_TEST_PULSE, "femb")
-        reg_5_value = ((75<<16)&0xFFFF0000) + ((reg_5_original)& 0xFFFF)    
+        reg_5_value = ((200<<16)&0xFFFF0000) + ((reg_5_original)& 0xFFFF)    
         self.femb_config.femb.write_reg(self.femb_config.REG_TEST_PULSE, reg_5_value, "femb")
         time.sleep(.1)
         
@@ -371,7 +373,7 @@ class FEMB_DAQ:
                                                               data_type = "bin", num = 1, header = True)
                 for pack in range (1000):
                     rawdata += self.femb_config.femb.get_data_packets(settings.CHIP_IP[chip], 
-                                                                       data_type = "bin", num = 1, header = False)
+                                                                       data_type = "bin", num = 1, header = True)
 
             with open(filename,"a+b") as f:
                f.write(rawdata)
